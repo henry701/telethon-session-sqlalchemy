@@ -2,7 +2,8 @@ from typing import Optional, Tuple, Any, Union
 
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm.scoping import scoped_session
-from sqlalchemy import Column, String, Integer, BigInteger, LargeBinary, orm, func, select, and_
+from sqlalchemy import Column, String, Integer, BigInteger, LargeBinary, orm, func, select, and_, \
+    inspect
 import sqlalchemy as sql
 
 from .orm import AlchemySession
@@ -44,8 +45,7 @@ class AlchemySessionContainer:
             if not self.db:
                 raise ValueError("Can't manage tables without an ORM session.")
             table_base.metadata.bind = self.db_engine
-            if not self.db_engine.dialect.has_table(self.db_engine,
-                                                    self.Version.__tablename__):
+            if not inspect(engine).has_table(self.Version.__tablename__):
                 table_base.metadata.create_all()
                 self.db.add(self.Version(version=LATEST_VERSION))
                 self.db.commit()
