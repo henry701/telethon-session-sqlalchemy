@@ -60,10 +60,10 @@ class AlchemyCoreSession(AlchemySession):
         with self.engine.begin() as conn:
             conn.execute(
                 self.Session.__table__.delete().where(self.Session.session_id == self.session_id))
-            conn.execute(self.Session.__table__.insert(),
+            conn.execute(self.Session.__table__.insert().values(
                          session_id=self.session_id, dc_id=self._dc_id,
                          server_address=self._server_address, port=self._port,
-                         auth_key=(self._auth_key.key if self._auth_key else b''))
+                         auth_key=(self._auth_key.key if self._auth_key else b'')))
 
     def save(self) -> None:
         # engine.execute() autocommits
