@@ -14,8 +14,9 @@ from .orm import AlchemySession
 class AlchemyCoreSession(AlchemySession):
     def _load_session(self) -> None:
         t = self.Session.__table__
-        rows = self.engine.execute(select([t.c.dc_id, t.c.server_address, t.c.port, t.c.auth_key])
-                                   .where(t.c.session_id == self.session_id))
+        with self.engine.begin() as conn:
+            rows = conn.execute(select([t.c.dc_id, t.c.server_address, t.c.port, t.c.auth_key])
+                                    .where(t.c.session_id == self.session_id))
         try:
             self._dc_id, self._server_address, self._port, auth_key = next(rows)
             self._auth_key = AuthKey(data=auth_key)
@@ -24,7 +25,8 @@ class AlchemyCoreSession(AlchemySession):
 
     def _get_auth_key(self) -> Optional[AuthKey]:
         t = self.Session.__table__
-        rows = self.engine.execute(select([t.c.auth_key]).where(t.c.session_id == self.session_id))
+        with self.engine.begin() as conn:
+            rows = conn.execute(select([t.c.auth_key]).where(t.c.session_id == self.session_id))
         try:
             ak = next(rows)[0]
         except (StopIteration, IndexError):
@@ -33,9 +35,10 @@ class AlchemyCoreSession(AlchemySession):
 
     def get_update_state(self, entity_id: int) -> Optional[updates.State]:
         t = self.UpdateState.__table__
-        rows = self.engine.execute(select([t])
-                                   .where(and_(t.c.session_id == self.session_id,
-                                               t.c.entity_id == entity_id)))
+        with self.engine.begin() as conn:
+            rows = conn.execute(select([t])
+                                    .where(and_(t.c.session_id == self.session_id,
+                                                t.c.entity_id == entity_id)))
         try:
             _, _, pts, qts, date, seq, unread_count = next(rows)
             date = datetime.datetime.utcfromtimestamp(date)
@@ -45,12 +48,13 @@ class AlchemyCoreSession(AlchemySession):
 
     def set_update_state(self, entity_id: int, row: Any) -> None:
         t = self.UpdateState.__table__
-        self.engine.execute(t.delete().where(and_(t.c.session_id == self.session_id,
-                                                  t.c.entity_id == entity_id)))
-        self.engine.execute(t.insert()
-                            .values(session_id=self.session_id, entity_id=entity_id, pts=row.pts,
-                                    qts=row.qts, date=row.date.timestamp(), seq=row.seq,
-                                    unread_count=row.unread_count))
+        with self.engine.begin() as conn:
+            conn.execute(t.delete().where(and_(t.c.session_id == self.session_id,
+                                                    t.c.entity_id == entity_id)))
+            conn.execute(t.insert()
+                                .values(session_id=self.session_id, entity_id=entity_id, pts=row.pts,
+                                        qts=row.qts, date=row.date.timestamp(), seq=row.seq,
+                                        unread_count=row.unread_count))
 
     def _update_session_table(self) -> None:
         with self.engine.begin() as conn:
@@ -104,8 +108,9 @@ class AlchemyCoreSession(AlchemySession):
 
     def _get_entity_rows_by_condition(self, condition) -> Optional[Tuple[int, int]]:
         t = self.Entity.__table__
-        rows = self.engine.execute(select([t.c.id, t.c.hash])
-                                   .where(and_(t.c.session_id == self.session_id, condition)))
+        with self.engine.begin() as conn:
+            rows = conn.execute(select([t.c.id, t.c.hash])
+                                    .where(and_(t.c.session_id == self.session_id, condition)))
         try:
             return next(rows)
         except StopIteration:
@@ -114,17 +119,19 @@ class AlchemyCoreSession(AlchemySession):
     def get_entity_rows_by_id(self, key: int, exact: bool = True) -> Optional[Tuple[int, int]]:
         t = self.Entity.__table__
         if exact:
-            rows = self.engine.execute(select([t.c.id, t.c.hash]).where(
-                and_(t.c.session_id == self.session_id, t.c.id == key)))
+            with self.engine.begin() as conn:
+                rows = conn.execute(select([t.c.id, t.c.hash]).where(
+                    and_(t.c.session_id == self.session_id, t.c.id == key)))
         else:
             ids = (
                 utils.get_peer_id(PeerUser(key)),
                 utils.get_peer_id(PeerChat(key)),
                 utils.get_peer_id(PeerChannel(key))
             )
-            rows = self.engine.execute(select([t.c.id, t.c.hash])
-                .where(
-                and_(t.c.session_id == self.session_id, t.c.id.in_(ids))))
+            with self.engine.begin() as conn:
+                rows = conn.execute(select([t.c.id, t.c.hash])
+                    .where(
+                    and_(t.c.session_id == self.session_id, t.c.id.in_(ids))))
 
         try:
             return next(rows)
@@ -133,11 +140,12 @@ class AlchemyCoreSession(AlchemySession):
 
     def get_file(self, md5_digest: str, file_size: int, cls: Any) -> Optional[Tuple[int, int]]:
         t = self.SentFile.__table__
-        rows = (self.engine.execute(select([t.c.id, t.c.hash])
-                                    .where(and_(t.c.session_id == self.session_id,
-                                                t.c.md5_digest == md5_digest,
-                                                t.c.file_size == file_size,
-                                                t.c.type == _SentFileType.from_type(cls).value))))
+        with self.engine.begin() as conn:
+            rows = (conn.execute(select([t.c.id, t.c.hash])
+                                        .where(and_(t.c.session_id == self.session_id,
+                                                    t.c.md5_digest == md5_digest,
+                                                    t.c.file_size == file_size,
+                                                    t.c.type == _SentFileType.from_type(cls).value))))
         try:
             return next(rows)
         except StopIteration:

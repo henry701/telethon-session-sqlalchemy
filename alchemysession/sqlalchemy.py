@@ -149,8 +149,9 @@ class AlchemySessionContainer:
     def _add_column(self, table: Any, column: Column) -> None:
         column_name = column.compile(dialect=self.db_engine.dialect)
         column_type = column.type.compile(self.db_engine.dialect)
-        self.db_engine.execute("ALTER TABLE {} ADD COLUMN {} {}".format(
-            table.__tablename__, column_name, column_type))
+        with self.db_engine.begin() as conn:
+            conn.execute("ALTER TABLE {} ADD COLUMN {} {}".format(
+                table.__tablename__, column_name, column_type))
 
     def check_and_upgrade_database(self) -> None:
         row = self.Version.query.all()
@@ -176,9 +177,10 @@ class AlchemySessionContainer:
         if self.core_mode:
             t = self.Session.__table__
 
-            rows = self.db_engine.execute(select([func.count(t.c.auth_key)])
-                                          .where(and_(t.c.session_id == session_id,
-                                                      t.c.auth_key != b'')))
+            with self.db_engine.begin() as conn:
+                rows = conn.execute(select([func.count(t.c.auth_key)])
+                                            .where(and_(t.c.session_id == session_id,
+                                                        t.c.auth_key != b'')))
             try:
                 count, = next(rows)
                 return count > 0
