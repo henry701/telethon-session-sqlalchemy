@@ -178,7 +178,7 @@ class AlchemySessionContainer:
             t = self.Session.__table__
 
             with self.db_engine.begin() as conn:
-                rows = conn.execute(select([func.count(t.c.auth_key)])
+                rows = conn.execute(select(func.count(t.c.auth_key))
                                             .where(and_(t.c.session_id == session_id,
                                                         t.c.auth_key != b'')))
             try:
