@@ -5,3 +5,6 @@ __pycache__/
 .idea/
 main.py
 .vscode
+.coverage
+coverage.xml
+.pytest_cache/
