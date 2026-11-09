@@ -1,5 +1,4 @@
-from typing import Optional, Tuple, Any, Union
-import datetime
+from typing import Optional, Tuple, Any, Union, List
 
 from sqlalchemy import and_, select
 
@@ -8,7 +7,7 @@ from telethon import utils
 from telethon.crypto import AuthKey
 from telethon.tl.types import InputPhoto, InputDocument, PeerUser, PeerChat, PeerChannel, updates
 
-from .orm import AlchemySession
+from .orm import AlchemySession, _to_state, _phone_key
 
 
 class AlchemyCoreSession(AlchemySession):
@@ -41,10 +40,17 @@ class AlchemyCoreSession(AlchemySession):
                                                 t.c.entity_id == entity_id)))
         try:
             _, _, pts, qts, date, seq, unread_count = next(rows)
-            date = datetime.datetime.utcfromtimestamp(date)
-            return updates.State(pts, qts, date, seq, unread_count)
+            return _to_state(pts, qts, date, seq, unread_count)
         except StopIteration:
             return None
+
+    def get_update_states(self) -> List[Tuple[int, updates.State]]:
+        t = self.UpdateState.__table__
+        with self.engine.begin() as conn:
+            rows = conn.execute(select(t.c.entity_id, t.c.pts, t.c.qts, t.c.date, t.c.seq,
+                                       t.c.unread_count)
+                                .where(t.c.session_id == self.session_id)).all()
+        return [(entity_id, _to_state(*state)) for entity_id, *state in rows]
 
     def set_update_state(self, entity_id: int, row: Any) -> None:
         t = self.UpdateState.__table__
@@ -98,7 +104,10 @@ class AlchemyCoreSession(AlchemySession):
                                       for row in rows])
 
     def get_entity_rows_by_phone(self, key: str) -> Optional[Tuple[int, int]]:
-        return self._get_entity_rows_by_condition(self.Entity.__table__.c.phone == key)
+        phone = _phone_key(key)
+        if phone is None:
+            return None
+        return self._get_entity_rows_by_condition(self.Entity.__table__.c.phone == phone)
 
     def get_entity_rows_by_username(self, key: str) -> Optional[Tuple[int, int]]:
         return self._get_entity_rows_by_condition(self.Entity.__table__.c.username == key)
@@ -159,8 +168,10 @@ class AlchemyCoreSession(AlchemySession):
         t = self.SentFile.__table__
         file_type = _SentFileType.from_type(type(instance)).value
         with self.engine.begin() as conn:
-            conn.execute(t.delete().where(session_id=self.session_id, md5_digest=md5_digest,
-                                          type=file_type, file_size=file_size))
+            conn.execute(t.delete().where(and_(t.c.session_id == self.session_id,
+                                               t.c.md5_digest == md5_digest,
+                                               t.c.type == file_type,
+                                               t.c.file_size == file_size)))
             conn.execute(t.insert().values(session_id=self.session_id, md5_digest=md5_digest,
                                            type=file_type, file_size=file_size, id=instance.id,
                                            hash=instance.access_hash))
