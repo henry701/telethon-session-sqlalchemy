@@ -5,6 +5,7 @@ from sqlalchemy.orm.scoping import scoped_session
 from sqlalchemy import Column, String, Integer, BigInteger, LargeBinary, orm, func, select, and_, \
     inspect
 import sqlalchemy as sql
+from sqlalchemy.dialects.mysql import VARBINARY
 
 from .orm import AlchemySession
 from .core import AlchemyCoreSession
@@ -121,7 +122,10 @@ class AlchemySessionContainer:
             __tablename__ = '{prefix}sent_files'.format(prefix=prefix)
 
             session_id = Column(String(255), primary_key=True)
-            md5_digest = Column(LargeBinary, primary_key=True)
+            # MySQL can't index a BLOB without a prefix length. Telethon only ever cached
+            # hashlib.md5().digest() (16 bytes); 255 bytes leaves room for any digest/hex form.
+            md5_digest = Column(LargeBinary().with_variant(VARBINARY(255), "mysql", "mariadb"),
+                                primary_key=True)
             file_size = Column(Integer, primary_key=True)
             type = Column(Integer, primary_key=True)
             id = Column(BigInteger)
@@ -187,7 +191,9 @@ class AlchemySessionContainer:
             except StopIteration:
                 return False
         else:
-            return self.Session.query.filter(self.Session.session_id == session_id).count() > 0
+            # Same semantics as core mode: a row without a usable auth key is not a session.
+            return self.Session.query.filter(self.Session.session_id == session_id,
+                                             self.Session.auth_key != b'').count() > 0
 
     def list_sessions(self):
         return
