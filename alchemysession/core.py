@@ -7,7 +7,8 @@ from telethon import utils
 from telethon.crypto import AuthKey
 from telethon.tl.types import InputPhoto, InputDocument, PeerUser, PeerChat, PeerChannel, updates
 
-from .orm import AlchemySession, _to_state, _phone_key
+from ._common import to_state, phone_key
+from .orm import AlchemySession
 
 
 class AlchemyCoreSession(AlchemySession):
@@ -40,7 +41,7 @@ class AlchemyCoreSession(AlchemySession):
                                                 t.c.entity_id == entity_id)))
         try:
             _, _, pts, qts, date, seq, unread_count = next(rows)
-            return _to_state(pts, qts, date, seq, unread_count)
+            return to_state(pts, qts, date, seq, unread_count)
         except StopIteration:
             return None
 
@@ -50,7 +51,8 @@ class AlchemyCoreSession(AlchemySession):
             rows = conn.execute(select(t.c.entity_id, t.c.pts, t.c.qts, t.c.date, t.c.seq,
                                        t.c.unread_count)
                                 .where(t.c.session_id == self.session_id)).all()
-        return [(entity_id, _to_state(*state)) for entity_id, *state in rows]
+        return [(row.entity_id, to_state(row.pts, row.qts, row.date, row.seq, row.unread_count))
+                for row in rows]
 
     def set_update_state(self, entity_id: int, row: Any) -> None:
         t = self.UpdateState.__table__
@@ -104,7 +106,7 @@ class AlchemyCoreSession(AlchemySession):
                                       for row in rows])
 
     def get_entity_rows_by_phone(self, key: str) -> Optional[Tuple[int, int]]:
-        phone = _phone_key(key)
+        phone = phone_key(key)
         if phone is None:
             return None
         return self._get_entity_rows_by_condition(self.Entity.__table__.c.phone == phone)

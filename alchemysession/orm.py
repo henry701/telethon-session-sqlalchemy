@@ -1,5 +1,4 @@
 from typing import Optional, Tuple, Any, Union, List, TYPE_CHECKING
-import datetime
 
 from sqlalchemy import orm
 
@@ -8,23 +7,10 @@ from telethon import utils
 from telethon.crypto import AuthKey
 from telethon.tl.types import InputPhoto, InputDocument, PeerUser, PeerChat, PeerChannel, updates
 
+from ._common import to_state, phone_key
+
 if TYPE_CHECKING:
     from .sqlalchemy import AlchemySessionContainer
-
-
-def _to_state(pts: int, qts: int, date: float, seq: int, unread_count: int) -> updates.State:
-    # Telethon calls int(state.date.timestamp()); a naive datetime would be read as local time.
-    return updates.State(pts, qts, datetime.datetime.fromtimestamp(date, tz=datetime.timezone.utc),
-                         seq, unread_count)
-
-
-def _phone_key(phone: Union[str, int]) -> Optional[int]:
-    # The phone column is BigInteger, but Telethon passes digit strings; PostgreSQL drivers
-    # that bind typed parameters (psycopg 3) reject bigint = varchar.
-    try:
-        return int(phone)
-    except (TypeError, ValueError):
-        return None
 
 
 class AlchemySession(MemorySession):
@@ -66,11 +52,11 @@ class AlchemySession(MemorySession):
     def get_update_state(self, entity_id: int) -> Optional[updates.State]:
         row = self.UpdateState.query.get((self.session_id, entity_id))
         if row:
-            return _to_state(row.pts, row.qts, row.date, row.seq, row.unread_count)
+            return to_state(row.pts, row.qts, row.date, row.seq, row.unread_count)
         return None
 
     def get_update_states(self) -> List[Tuple[int, updates.State]]:
-        return [(row.entity_id, _to_state(row.pts, row.qts, row.date, row.seq, row.unread_count))
+        return [(row.entity_id, to_state(row.pts, row.qts, row.date, row.seq, row.unread_count))
                 for row in self._db_query(self.UpdateState).all()]
 
     def set_update_state(self, entity_id: int, row: Any) -> None:
@@ -125,7 +111,7 @@ class AlchemySession(MemorySession):
         self.save()
 
     def get_entity_rows_by_phone(self, key: str) -> Optional[Tuple[int, int]]:
-        phone = _phone_key(key)
+        phone = phone_key(key)
         if phone is None:
             return None
         row = self._db_query(self.Entity,
