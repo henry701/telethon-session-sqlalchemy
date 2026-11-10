@@ -1,4 +1,5 @@
 import os
+import time
 import uuid
 
 import pytest
@@ -10,6 +11,7 @@ from alchemysession.core import AlchemyCoreSession
 # SQLite always runs; server backends run when their URL is provided (CI service containers).
 BACKEND_URL_ENV = {
     "postgresql": "TEST_POSTGRES_URL",
+    "mysql": "TEST_MYSQL_URL",
 }
 
 MODES = ("orm", "core", "core-generic")
@@ -59,3 +61,17 @@ def make_container(engine, mode):
         container.db.remove()
     if created:
         created[0].Version.metadata.drop_all(engine)
+
+
+@pytest.fixture
+def local_tz():
+    """A non-UTC local zone, so naive/aware datetime mix-ups show up as wrong timestamps."""
+    old = os.environ.get("TZ")
+    os.environ["TZ"] = "America/Sao_Paulo"
+    time.tzset()
+    yield
+    if old is None:
+        del os.environ["TZ"]
+    else:
+        os.environ["TZ"] = old
+    time.tzset()

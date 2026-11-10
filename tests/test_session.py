@@ -1,6 +1,4 @@
 import datetime
-import os
-import time
 
 import pytest
 from telethon import utils
@@ -23,20 +21,6 @@ def _state(pts=10, qts=20, ts=1_700_000_000, seq=30):
                          seq=seq, unread_count=0)
 
 
-@pytest.fixture
-def local_tz():
-    """A non-UTC local zone, so naive/aware datetime mix-ups show up as wrong timestamps."""
-    old = os.environ.get("TZ")
-    os.environ["TZ"] = "America/Sao_Paulo"
-    time.tzset()
-    yield
-    if old is None:
-        del os.environ["TZ"]
-    else:
-        os.environ["TZ"] = old
-    time.tzset()
-
-
 def test_dc_and_auth_key_survive_reload(make_container):
     container = make_container()
     session = container.new_session(SESSION_ID)
@@ -50,9 +34,7 @@ def test_dc_and_auth_key_survive_reload(make_container):
     assert reloaded.auth_key.key == b"k" * 256
 
 
-def test_has_session_false_without_auth_key(make_container, mode):
-    if mode == "orm":
-        pytest.skip("ORM has_session() counts rows regardless of auth_key (upstream behaviour)")
+def test_has_session_false_without_auth_key(make_container):
     container = make_container()
     assert not container.has_session(SESSION_ID)
     session = container.new_session(SESSION_ID)
@@ -61,7 +43,7 @@ def test_has_session_false_without_auth_key(make_container, mode):
     assert not container.has_session(SESSION_ID)
 
 
-def test_update_state_roundtrip_and_overwrite(make_container):
+def test_update_state_roundtrip_and_overwrite(make_container, local_tz):
     session = make_container().new_session(SESSION_ID)
     # Telethon writes the general state (entity 0) on every disconnect, so overwrites must work.
     session.set_update_state(0, _state(pts=1))
@@ -192,3 +174,17 @@ def test_delete_removes_only_own_rows(make_container):
     assert container.has_session("other")
     assert container.new_session("mine").get_update_state(0) is None
     assert container.new_session("other").get_update_state(0) is not None
+
+
+def test_has_session_matches_across_modes_for_empty_auth_key(make_container):
+    # A session row with an empty auth key is what set_dc() leaves before login and what
+    # _update_session_table() writes after log_out(); neither is a usable session.
+    container = make_container()
+    session = container.new_session(SESSION_ID)
+    session.set_dc(2, "149.154.167.51", 443)
+    session.auth_key = AuthKey(data=b"k" * 256)
+    session.save()
+    assert container.has_session(SESSION_ID)
+    session.auth_key = None
+    session.save()
+    assert not container.has_session(SESSION_ID)
